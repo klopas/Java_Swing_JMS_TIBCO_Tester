@@ -10,6 +10,7 @@ import javax.jms.MessageProducer;
 import javax.jms.Queue;
 import javax.jms.Session;
 import javax.jms.TextMessage;
+import java.util.UUID;
 
 import com.tibco.tibjms.TibjmsConnectionFactory;
 
@@ -32,6 +33,8 @@ public class JmsService implements ExceptionListener
 	private MessageProducer messageProducer;
 
 	private MessageConsumer messageConsumer;
+  
+  private int timeout = 90000;
 
 	@SuppressWarnings("unused")
 	private JmsService()
@@ -63,7 +66,7 @@ public class JmsService implements ExceptionListener
 
 			messageProducer = session.createProducer(queueIn);
 			messageProducer.setDeliveryMode(DeliveryMode.PERSISTENT);
-			messageProducer.setTimeToLive(90000);
+			messageProducer.setTimeToLive(timeout);
 
 		}
 		catch (JMSException ex)
@@ -92,7 +95,7 @@ public class JmsService implements ExceptionListener
 
 				messageProducer = session.createProducer(queueIn);
 				messageProducer.setDeliveryMode(DeliveryMode.PERSISTENT);
-				messageProducer.setTimeToLive(90000);
+				messageProducer.setTimeToLive(timeout);
 			}
 			catch (JMSException ex)
 			{
@@ -131,19 +134,29 @@ public class JmsService implements ExceptionListener
 		final TextMessage txtMessageReq = session.createTextMessage(text);
 		txtMessageReq.setJMSDestination(queueIn);
 		txtMessageReq.setJMSReplyTo(queueOut);
+		final String jmsCorrelationID = generateJMSCorrelationID();
+		final String messageSelector = String.format("JMSCorrelationID = '%1s'", jmsCorrelationID);
+		txtMessageReq.setJMSCorrelationID(messageSelector);
 		messageProducer.send(txtMessageReq);
-		return txtMessageReq.getJMSMessageID();
+		return messageSelector;
+	}
+	
+	private String generateJMSCorrelationID()
+	{
+		return UUID.randomUUID().toString();
 	}
 
 	public String receive(String sendId) throws JMSException
 	{
-		String filter = "JMSCorrelationID = '" + sendId + "'";
-		messageConsumer = session.createConsumer(queueOut, filter);
-		final TextMessage txtMessageResp = (TextMessage) messageConsumer.receive(90000);
+		messageConsumer = session.createConsumer(queueOut, sendId);
+		final TextMessage txtMessageResp = (TextMessage) messageConsumer.receive(timeout);
 
 		if (txtMessageResp == null)
 		{
-			throw new JMSException("Response message is null");
+			return "<?xml version = \"1.0\" encoding = \"UTF-8\"?>"
+					+"<errorResponse>"
+					    +"<message>Response message is null</message>"
+					+"</errorResponse>";
 		}
 		else
 		{
@@ -179,6 +192,16 @@ public class JmsService implements ExceptionListener
 	public void setPassword(String password)
 	{
 		this.password = password;
+	}
+  
+  public int getTimeout()
+	{
+		return timeout;
+	}
+
+	public void setTimeout(int timeout)
+	{
+		this.timeout = timeout;
 	}
 
 }
